@@ -23,5 +23,3 @@ jobs:
           context: ./pprotein
           file: ./pprotein/Dockerfile
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
