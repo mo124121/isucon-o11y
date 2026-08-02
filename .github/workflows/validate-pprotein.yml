@@ -12,39 +12,58 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+          - platform: linux/arm64
+            arch: arm64
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Build image without pushing
         uses: docker/build-push-action@v7
         with:
           context: ./pprotein
           file: ./pprotein/Dockerfile
+          platforms: ${{ matrix.platform }}
           push: false
           load: true
-          tags: pprotein:validate
+          tags: pprotein:validate-${{ matrix.arch }}
 
       - name: Start container and check HTTP endpoint
         shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
 
-          container=pprotein-smoke
+          container="pprotein-smoke-${ARCH}"
           trap 'docker logs "${container}" 2>&1 || true; docker rm -f "${container}" >/dev/null 2>&1 || true' EXIT
 
           docker run --detach \
+            --platform "${PLATFORM}" \
             --name "${container}" \
             --publish 9000:9000 \
-            pprotein:validate
+            "pprotein:validate-${ARCH}"
 
-          for _ in {1..30}; do
+          for _ in {1..60}; do
             if curl --fail --silent --show-error http://127.0.0.1:9000/api/pprof >/dev/null; then
               exit 0
             fi
             sleep 1
           done
 
-          echo "pprotein did not become ready" >&2
+          echo "pprotein did not become ready on ${PLATFORM}" >&2
           exit 1
