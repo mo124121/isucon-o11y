@@ -23,3 +23,28 @@ jobs:
           context: ./pprotein
           file: ./pprotein/Dockerfile
           push: false
+          load: true
+          tags: pprotein:validate
+
+      - name: Start container and check HTTP endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          container=pprotein-smoke
+          trap 'docker logs "${container}" 2>&1 || true; docker rm -f "${container}" >/dev/null 2>&1 || true' EXIT
+
+          docker run --detach \
+            --name "${container}" \
+            --publish 9000:9000 \
+            pprotein:validate
+
+          for _ in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:9000/api/pprof >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "pprotein did not become ready" >&2
+          exit 1
