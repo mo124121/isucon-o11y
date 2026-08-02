@@ -1,0 +1,68 @@
+name: Publish pprotein image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/pprotein
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tags
+        id: tags
+        shell: bash
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: |
+          set -euo pipefail
+
+          image="${IMAGE,,}"
+          tags=("${image}:sha-${GITHUB_SHA}")
+
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            tags+=("${image}:latest")
+          fi
+
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            major="${version%%.*}"
+            remainder="${version#*.}"
+            minor="${remainder%%.*}"
+            tags+=("${image}:${version}" "${image}:${major}.${minor}")
+          fi
+
+          {
+            echo 'tags<<EOF'
+            printf '%s\n' "${tags[@]}"
+            echo 'EOF'
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./pprotein
+          file: ./pprotein/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
